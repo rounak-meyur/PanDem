@@ -5,10 +5,10 @@ Posterior Simulation: Sequential Monte Carlo
 
 The following nonlinear time series model is analyzed.
 
-![](README_files/figure-gfm/equations-1.png)<!-- -->
+![](README_files/figure-gfm/equations-1.png)<!-- -->![](README_files/figure-gfm/equations-2.png)<!-- -->
 
-where \(\nu_t\thicksim N(0,v)\) and \(w_t\thicksim N(0,w)\) are mutually
-independent Gaussian random variables.
+where and \(w_t\thicksim N(0,w)\) are mutually independent Gaussian
+random variables.
 
 ``` r
 # Function to simulate observations for model in example 1
@@ -74,77 +74,168 @@ The importance density
 be Gaussian distribution \(N(\theta_{t-1},w)\).
 
 ``` r
-# Functions to compute expectation of conditional normals
-mu.theta = function(theta,t)
-{
-  b*theta+c*theta/(1+theta^2)+d*cos(omega*t)
-}
+#####################################################################
+# Computes the expection of current state given previous state:     #
+# E[theta_t|theta_{t-1}]=b*theta+c*theta/(1+theta^2)+d*cos(omega*t) #
+mu.theta = function(theta,t) b*theta+c*theta/(1+theta^2)+d*cos(omega*t)
 
-mu.y = function(theta)
-{
-  a*theta^2
-}
+#####################################################################
+# Computes the expection of current observation given present state:#
+# E[y_t|theta_t]=a*theta^2                                          #
+mu.y = function(theta) a*theta^2                                    
 
-imp.sampling <- function(M,y,t,theta.previous,w.prev)
+#####################################################################
+# Returns a sample from the importance distribution and the weight  #
+# to scale the target probability distribution to the importance    #
+imp.sampling <- function(M,y,t,theta.previous,weight.prev)
 {
   theta.current <- rep(NA,M)
-  w.current <- rep(NA,M)
+  weight.current <- rep(NA,M)
   for(m in 1:M)
   {
     theta.current[m] <- rnorm(1,mean=theta.previous[m],sd=sqrt(w))
     num1 <- dnorm(y[t],mu.y(theta.current[m]),sqrt(v))
     num2 <- dnorm(theta.current[m],mu.theta(theta.previous[m],t),sqrt(w))
     den <- dnorm(theta.current[m],mean=theta.previous[m],sd=sqrt(w))
-    w.current[m] <- w.prev[m]*num1*num2/den
+    weight.current[m] <- weight.prev[m]*num1*num2/den
   }
-  w.current <- w.current/sum(w.current)
-  return(list("theta"=theta.current,"w"=w.current))
+  weight.current <- weight.current/sum(weight.current)
+  return(list("theta"=theta.current,"weight"=weight.current))
 }
 
-# Filtering function
-smc.sis = function(Tbig,M,y)
+#####################################################################
+# Performs filtering operation with importance sampling to estimate
+# the states for times t=1 to t=T.
+smc.sis <- function(Tbig,M,y)
 {
   # Initialize the arrays of estimates
   theta <- array(NA,dim=c(M,Tbig))
   est.theta <- array(NA,dim=c(M,Tbig))
-  w <- array(NA,dim=c(M,Tbig))
+  weight <- array(NA,dim=c(M,Tbig))
   
   # Initial state and weight
   theta[,1] <- rnorm(M,mean=0,sd=sqrt(w))
-  w[,1] <- rep(1/M,M)
+  weight[,1] <- rep(1/M,M)
   # Find estimated state
   est.theta[,1] <- sample(x = theta[,1], M, 
-                          replace = T, prob = w[,1])
-  print(est.theta[,1])
+                          replace = T, prob = weight[,1])
+  
   for(t in 2:Tbig)
   {
     # Importance sampling step
-    samples <- imp.sampling(M,y,t,est.theta[,t-1],w[,t-1])
+    samples <- imp.sampling(M,y,t,est.theta[,t-1],weight[,t-1])
     theta[,t] <- samples$theta
-    print(theta[,t])
-    w[,t] <- samples$w
+    weight[,t] <- samples$weight
     # Find estimated state through resampling
     est.theta[,t] <- sample(x = theta[,t], M, 
-                          replace = T, prob = w[,t])
+                          replace = T, prob = weight[,t])
   }
   theta.mean <- apply(est.theta,2,mean)
   theta.var <- apply(est.theta,2,var)
-  return("mu"=theta.mean,"sigma2"=theta.var)
+  return(list("mu"=theta.mean,"sigma2"=theta.var))
 }
 ```
 
 ``` r
-sis.est.theta <- smc.sis(200,10,sim.y)
+sis.est.theta <- smc.sis(200,3000,sim.y)
 theta.mean <- sis.est.theta$mu
 theta.var <- sis.est.theta$sigma2
 
-ll = min(c(min(theta.mean-2*sqrt(theta.var)),sim.y))
-ul = max(c(max(theta.mean+2*sqrt(theta.var)),sim.y))
+ll = min(c(min(theta.mean-2*sqrt(theta.var)),min(sim.theta),sim.y))
+ul = max(c(max(theta.mean+2*sqrt(theta.var)),max(sim.theta),sim.y))
 
-plot(theta.mean,type="l",xlab="time",ylab="State",
-     ylim=c(ll,ul),lwd=2)
+plot(theta.mean,type="l",xlab="time",ylab="State",ylim=c(ll,ul),
+     lwd=2)
 lines(sim.theta,col="red")
 lines(theta.mean+1.96*sqrt(theta.var),lty=2,lwd=2,col="blue")
-lines(theta.mean-1.96*sqrt(theta.var),lty=2,lwd=2,col="blue")
+lines(theta.mean-1.96*sqrt(theta.var),lty=2,lwd=2,col="green")
 points(sim.y,lwd=2)
 ```
+
+![](README_files/figure-gfm/estimate-1.png)<!-- -->
+
+``` r
+aux.var <- function(M,y,t,theta.previous,weight.previous)
+{
+  # Get probablity of auxillary particles
+  prob <- rep(NA,M)
+  for(k in 1:M)
+  {
+    mu.k <- mu.theta(theta.previous[k],t)
+    prob[k] <- dnorm(y[t],mean=mu.y(mu.k),sd=sqrt(v))*weight.previous[k]
+  }
+  prob <- prob/sum(prob)
+  
+  # Sample auxillary variable
+  return(sample(M,size=M,replace=T,prob=prob))
+}
+
+imp.sampling.aux <- function(M,y,t,theta.previous,weight.prev,aux.var)
+{
+  theta.current <- rep(NA,M)
+  weight.current <- rep(NA,M)
+  for(m in 1:M)
+  {
+    k <- aux.var[m]
+    theta.current[m] <- rnorm(1,mean=mu.theta(theta.previous[k],t),
+                              sd=sqrt(w))
+    mu.aux <- mu.theta(theta.previous[k],t)
+    
+    num <- dnorm(y[t],mean=mu.y(theta.current[m]),sd=sqrt(v))
+    den <- dnorm(y[t],mean=mu.y(mu.aux),sd=sqrt(v))
+    weight.current[m] <- num/den
+  }
+  weight.current <- weight.current/sum(weight.current)
+  return(list("theta"=theta.current,"weight"=weight.current))
+}
+
+smc.apf <- function(Tbig,M,y)
+{
+  # Initialize the arrays of estimates
+  theta <- array(NA,dim=c(M,Tbig))
+  weight <- array(NA,dim=c(M,Tbig))
+  est.theta <- array(NA,dim=c(M,Tbig))
+  
+  # Initial time instant
+  theta[,1] <- rnorm(M,mean=0,sd=sqrt(w))
+  weight[,1] <- rep(1/M,M)
+  est.theta[,1] <- sample(x = theta[,1], M, 
+                          replace = T, prob = weight[,1])
+  
+  # Iterate over the time instants
+  for (t in 2:Tbig)
+  {
+    # Find probabilities for auxilliary variables
+    aux.k <- aux.var(M,y,t,est.theta[,t-1],weight)
+    # Importance sampling step
+    samples <- imp.sampling.aux(M,y,t,est.theta[,t-1],weight[,t-1],aux.k)
+    theta[,t] <- samples$theta
+    weight[,t] <- samples$weight
+    
+    # Find estimated state through resampling
+    est.theta[,t] <- sample(x = theta[,t], M, 
+                          replace = T, prob = weight[,t])
+  }
+  theta.mean <- apply(est.theta,2,mean)
+  theta.var <- apply(est.theta,2,var)
+  return(list("mu"=theta.mean,"sigma2"=theta.var))
+}
+```
+
+``` r
+apf.est.theta <- smc.sis(200,3000,sim.y)
+apf.theta.mean <- apf.est.theta$mu
+apf.theta.var <- apf.est.theta$sigma2
+
+ll = min(c(min(apf.theta.mean-2*sqrt(apf.theta.var)),min(sim.theta),sim.y))
+ul = max(c(max(apf.theta.mean+2*sqrt(apf.theta.var)),max(sim.theta),sim.y))
+
+plot(apf.theta.mean,type="l",xlab="time",ylab="State",ylim=c(ll,ul),
+     lwd=2)
+lines(sim.theta,col="red")
+lines(apf.theta.mean+1.96*sqrt(apf.theta.var),lty=2,lwd=2,col="blue")
+lines(apf.theta.mean-1.96*sqrt(apf.theta.var),lty=2,lwd=2,col="green")
+points(sim.y,lwd=2)
+```
+
+![](README_files/figure-gfm/estimate_aux-1.png)<!-- -->
