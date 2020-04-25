@@ -59,19 +59,19 @@ plot(sim.theta[1:199],sim.theta[2:200],type="p",pch=19,xlab=TeX("State,$\\theta_
 ![](README_files/figure-gfm/simulate-1.png)<!-- -->
 
 The first plot shows the variation of observations \(y_t\) with state
-\(\theta_t\) and the second one plots \(\theta_t\) versus
-\(\theta_{t-1}\).
+\(\theta_t\) and the second one plots \(`\theta_t`\) versus
+\(`\theta_{t-1}`\).
 
 The first goal is to find the probability density functions
-\(p(\theta_t^{(m)}|\theta_{(t-1)}^{(m)})\) and
-\(p(y_t|\theta_{(t)}^{(m)})\). From the state evolution equation, with
-evolution error \(w_t\) following a Gaussian distribution \(N(0,w)\), we
-can evaluate the density functions to be a Gaussian distribution
-\(N\big(a\theta_{t}^2,v\big)\) and
-\(N\bigg(b\theta^{(m)}_{t-1}+c\dfrac{\theta^{(m)}_{t-1}}{1+\theta_{t-1}^{(m)2}}+d\cos(\omega t),w\bigg)\).
+\(`p(\theta_t^{(m)}|\theta_{(t-1)}^{(m)})`\) and
+\(`p(y_t|\theta_{(t)}^{(m)})`\). From the state evolution equation, with
+evolution error \(`w_t`\) following a Gaussian distribution
+\(`N(0,w)`\), we can evaluate the density functions to be a Gaussian
+distribution \(`N\big(a\theta_{t}^2,v\big)`\) and
+\(`N\bigg(b\theta^{(m)}_{t-1}+c\dfrac{\theta^{(m)}_{t-1}}{1+\theta_{t-1}^{(m)2}}+d\cos(\omega t),w\bigg)`\).
 The importance density
-\(g_t(\theta_t^{(m)}|\theta_{0:(t-1)}^{(m)},y_{1:t})\) is considered to
-be Gaussian distribution \(N(\theta_{t-1},w)\).
+\(`g_t(\theta_t^{(m)}|\theta_{0:(t-1)}^{(m)},y_{1:t})`\) is considered
+to be Gaussian distribution \(`N(\theta_{t-1},w)`\).
 
 ``` r
 #####################################################################
@@ -93,7 +93,7 @@ imp.sampling <- function(M,y,t,theta.previous,weight.prev)
   weight.current <- rep(NA,M)
   for(m in 1:M)
   {
-    theta.current[m] <- rnorm(1,mean=theta.previous[m],sd=sqrt(w))
+    theta.current[m] <- rnorm(1,mean=mu.theta(theta.previous[m],t),sd=sqrt(w))
     num1 <- dnorm(y[t],mu.y(theta.current[m]),sqrt(v))
     num2 <- dnorm(theta.current[m],mu.theta(theta.previous[m],t),sqrt(w))
     den <- dnorm(theta.current[m],mean=theta.previous[m],sd=sqrt(w))
@@ -147,14 +147,26 @@ ul = max(c(max(theta.mean+2*sqrt(theta.var)),max(sim.theta),sim.y))
 plot(theta.mean,type="l",xlab="time",ylab="State",ylim=c(ll,ul),
      lwd=2)
 lines(sim.theta,col="red")
-lines(theta.mean+1.96*sqrt(theta.var),lty=2,lwd=2,col="blue")
-lines(theta.mean-1.96*sqrt(theta.var),lty=2,lwd=2,col="green")
-points(sim.y,lwd=2)
+lines(theta.mean+1.96*sqrt(theta.var),lty=4,lwd=0.5,col="blue")
+lines(theta.mean-1.96*sqrt(theta.var),lty=4,lwd=0.5,col="blue")
 ```
 
 ![](README_files/figure-gfm/estimate-1.png)<!-- -->
 
 ``` r
+#points(sim.y,lwd=2)
+```
+
+We now analyze the auxillary particle filter approach for posterior
+simulation using sequential Monte Carlo. The first
+
+``` r
+##########################################################################
+# Samples M auxillary variables from the set {1,2,...,M}. The probablity #
+# of each index is proportional to w_k*p(y|mu_k) where w_k is the weight #
+# corresponding to the kth sample of previous iteration and mu_k is the  #
+# mean of the distribution of theta_t|theta_{t-1}^{(k)}.
+
 aux.var <- function(M,y,t,theta.previous,weight.previous)
 {
   # Get probablity of auxillary particles
@@ -169,6 +181,9 @@ aux.var <- function(M,y,t,theta.previous,weight.previous)
   # Sample auxillary variable
   return(sample(M,size=M,replace=T,prob=prob))
 }
+
+##########################################################################
+# Performs importance sampling with auxillary particle sampling
 
 imp.sampling.aux <- function(M,y,t,theta.previous,weight.prev,aux.var)
 {
@@ -223,7 +238,7 @@ smc.apf <- function(Tbig,M,y)
 ```
 
 ``` r
-apf.est.theta <- smc.sis(200,3000,sim.y)
+apf.est.theta <- smc.apf(200,3000,sim.y)
 apf.theta.mean <- apf.est.theta$mu
 apf.theta.var <- apf.est.theta$sigma2
 
@@ -233,9 +248,12 @@ ul = max(c(max(apf.theta.mean+2*sqrt(apf.theta.var)),max(sim.theta),sim.y))
 plot(apf.theta.mean,type="l",xlab="time",ylab="State",ylim=c(ll,ul),
      lwd=2)
 lines(sim.theta,col="red")
-lines(apf.theta.mean+1.96*sqrt(apf.theta.var),lty=2,lwd=2,col="blue")
-lines(apf.theta.mean-1.96*sqrt(apf.theta.var),lty=2,lwd=2,col="green")
-points(sim.y,lwd=2)
+lines(apf.theta.mean+1.96*sqrt(apf.theta.var),lty=4,lwd=0.5,col="blue")
+lines(apf.theta.mean-1.96*sqrt(apf.theta.var),lty=4,lwd=0.5,col="blue")
 ```
 
 ![](README_files/figure-gfm/estimate_aux-1.png)<!-- -->
+
+``` r
+#points(sim.y,lwd=2)
+```
