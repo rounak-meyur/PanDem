@@ -137,7 +137,7 @@ smc.sis <- function(Tbig,M,y)
 ```
 
 ``` r
-sis.est.theta <- smc.sis(200,3000,sim.y)
+sis.est.theta <- smc.sis(200,500,sim.y)
 theta.mean <- sis.est.theta$mu
 theta.var <- sis.est.theta$sigma2
 
@@ -238,7 +238,7 @@ smc.apf <- function(Tbig,M,y)
 ```
 
 ``` r
-apf.est.theta <- smc.apf(200,3000,sim.y)
+apf.est.theta <- smc.apf(200,500,sim.y)
 apf.theta.mean <- apf.est.theta$mu
 apf.theta.var <- apf.est.theta$sigma2
 
