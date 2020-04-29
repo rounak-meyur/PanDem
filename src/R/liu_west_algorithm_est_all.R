@@ -2,8 +2,7 @@
 #
 #  NON-LINEAR NORMAL DYNAMIC MODEL 
 #
-#  AUXILIARY PARTICLE FILTER + PARAMETER LEARNING
-#  ONLY VARIANCES ARE UNKNOWN
+#  AUXILIARY PARTICLE FILTER + PARAMETER LEARNING 
 #
 #################################################################################################
 #
@@ -64,6 +63,8 @@ plot(sim.theta[1:199],sim.theta[2:200],type="p",pch=19,xlab=TeX("State,$\\theta_
 
 
 
+
+
 # Liu and West filter
 # -------------------
 
@@ -81,36 +82,34 @@ sample.theta.phi <- function(M,y,t,theta,phi)
   m.phi <- apply(phi,2,mean)
   v.phi <- var(phi)
   
-  # Compute prior point estimate of (theta,phi)
-  # given by (mu,m)
-  X <- t(apply(cbind(theta,t-1),1,G)) 
-  theta.prior <- apply(X*beta,1,sum)
-  phi.prior <- A*phi+(1-A)*matrix(m.phi,M,2,byrow=T)
+  # Compute auxillary indices
+  X <- t(apply(cbind(theta,t-1),1,G))
+  theta.prior <- apply(X*phi[,1:3],1,sum)
+  phi.prior <- A*phi+(1-A)*matrix(m.phi,M,5,byrow=T)
   
-  # Sample auxillary indices
-  p <- dnorm(y[t],a*theta.prior^2,exp(phi.prior[,1]/2))
+  # Compute auxillary indices
+  p <- dnorm(y[t],a*theta.prior^2,exp(phi.prior[,4]/2))
   k <- sample(1:M,size=M,replace=T,prob=p)
   
-  # Sample theta and phi from particle approximate
-  phi.post <- phi.prior[k,] + matrix(rnorm(2*M),M,2)%*%chol(h2*v.phi)
+  # Sample theta and phi
+  phi.post <- phi.prior[k,] + matrix(rnorm(5*M),M,5)%*%chol(h2*v.phi)
   X <- t(apply(cbind(theta[k],t-1),1,G))
-  theta.post <- rnorm(M,apply(X*beta,1,sum),exp(phi.post[,2]/2))
-  weight <- dnorm(y[t],a*theta.post^2,exp(phi.post[,1]/2))/
-    dnorm(y[t],a*theta.prior[k]^2,exp(phi.prior[k,1]/2))
+  theta.post <- rnorm(M,apply(X*phi.post[,1:3],1,sum),exp(phi.post[,5]/2))
+  weight <- dnorm(y[t],a*theta.post^2,exp(phi.post[,4]/2))/
+    dnorm(y[t],a*theta.prior[k]^2,exp(phi.prior[k,4]/2))
   weight <- weight/sum(weight)
   ind    = sample(1:M,size=M,replace=T,prob=weight)
   
   return(list("theta"=theta.post[ind],"phi"=phi.post[ind,]))
 }
 
-
 # Sequential Monte Carlo
 # -----------------------
-smc.liuwest.var <- function(Tbig,M,y,theta0,phi0)
+smc.liu <- function(Tbig,M,y,theta0,phi0)
 {
   # Initialize the arrays of estimates
   est.theta <- NULL
-  est.phi <- array(0,c(M,2,Tbig))
+  est.phi <- array(0,c(M,5,Tbig))
   
   theta <- theta0
   phi <- phi0
@@ -118,23 +117,28 @@ smc.liuwest.var <- function(Tbig,M,y,theta0,phi0)
   # Iterate over the time instants
   for (t in 1:Tbig)
   {
-    # Sample theta and phi from particle approximate distributions
     samples <- sample.theta.phi(M,y,t,theta,phi)
+    
     theta <- samples$theta
     phi <- samples$phi
     
-    # Update output arrays
+    # Update
     est.theta <- rbind(est.theta,theta)
-    est.phi[,,t] <- phi
+    est.phi[,,t] <- phi 
   }
   mtheta = apply(est.theta,1,mean)
   ltheta = apply(est.theta,1,quant025)
   utheta = apply(est.theta,1,quant975)
-  mphi  = matrix(0,Tbig,2)
-  lphi  = matrix(0,Tbig,2)
-  uphi  = matrix(0,Tbig,2)
-  
-  for (i in 1:2)
+  mphi  = matrix(0,Tbig,5)
+  lphi  = matrix(0,Tbig,5)
+  uphi  = matrix(0,Tbig,5)
+  for (i in 1:3)
+  {
+    mphi[,i] = apply(est.phi[,i,],2,mean)
+    lphi[,i] = apply(est.phi[,i,],2,quant025)
+    uphi[,i] = apply(est.phi[,i,],2,quant975)
+  }
+  for (i in 4:5)
   {
     mphi[,i] = apply(exp(est.phi[,i,]),2,mean)
     lphi[,i] = apply(exp(est.phi[,i,]),2,quant025)
@@ -147,7 +151,8 @@ smc.liuwest.var <- function(Tbig,M,y,theta0,phi0)
 
 
 
-pars.true <- c(v,w)
+# Liu and West filter
+# -------------------
 set.seed(8642)
 M <- 10000
 
@@ -157,17 +162,19 @@ a0  = 3
 A0  = 20
 b0  = 3
 B0  = 2
+c0  = c(0.5,25,8)
+C0  = c(0.1,16,2)
 m0  = 0
 V0  = 5
 
-# Initialize estimates
-# ---------------------
-phi0 <- cbind(log(1/rgamma(M,a0,A0)),log(1/rgamma(M,b0,B0)))
+phi0 <- cbind(rnorm(M,c0[1],sqrt(C0[1])),rnorm(M,c0[2],sqrt(C0[2])),rnorm(M,c0[3],sqrt(C0[3])),
+              log(1/rgamma(M,a0,A0)),log(1/rgamma(M,b0,B0)))
 theta0 <- rnorm(M,m0,sqrt(V0))
 
-# Perform estimation
-# ---------------------
-est <- smc.liuwest.var(200,M,sim.y,theta0,phi0)
+
+# Estimate the states and parameters
+# -----------------------------------
+est <- smc.liu(200,M,sim.y,theta0,phi0)
 
 mx <- est$theta_mu
 lx <- est$theta_l
@@ -177,21 +184,26 @@ mpars <- est$phi_m
 lpars <- est$phi_l
 upars <- est$phi_u
 
-layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
+
+# Plot the estimates and quantiles
+# --------------------------------
+pars.true <- c(beta,v,w)
+
+par(mfrow=c(3,2))
 plot(mx,xlab="Time",ylab="State estimates",main=expression(x[t]),type = 'l',
      col="blue")
 lines(sim.theta,col="red",lty=2)
 # lines(lx,col="blue",lty=2)
 # lines(ux,col="blue",lty=2)
-names = c("v","w")
-for (i in 1:2){
+names = c("b","c","d","v","w")
+
+for (i in 1:5){
   ts.plot(lpars[,i],ylim=range(lpars[,i],upars[,i]),ylab="",main=names[i])
-  lines(lpars[,i],col="blue",lty=4)
+  lines(lpars[,i],col="blue")
   lines(mpars[,i],col=1)
-  lines(upars[,i],col="blue",lty=4)
+  lines(upars[,i],col="blue")
   abline(h=pars.true[i],col="red",lty=2)
 }
-
 
 # Smoothing function
 # -------------------
