@@ -7,26 +7,6 @@ The following nonlinear time series model is analyzed.
 
 ![](README_files/figure-gfm/equations-1.png)<!-- -->![](README_files/figure-gfm/equations-2.png)<!-- -->
 
-where and \(w_t\thicksim N(0,w)\) are mutually independent Gaussian
-random variables.
-
-``` r
-# Function to simulate observations for model in example 1
-simulate.example1 = function(Tbig,a,b,c,d,omega,v,w)
-{
-  y = rep(NA,Tbig)
-  theta = rep(NA,Tbig)
-  theta[1] = rnorm(1,mean=0,sd=sqrt(w))
-  y[1] = a*theta[1]^2 + rnorm(1,mean=0,sd=sqrt(v))
-  for(t in 2:Tbig)
-  {
-    theta[t] = b*theta[t-1] + c*theta[t-1]/(1+theta[t-1]^2) + d*cos(omega*t) + rnorm(1,mean=0,sd=sqrt(w))
-    y[t] = a*theta[t]^2 + rnorm(1,mean=0,sd=sqrt(v))
-  }
-  list("y"=y,"theta"=theta)
-}
-```
-
 The function is used to generate \(y_t\) and \(\theta_t\) for
 \(t=1:200\) and with particular values of the parameters
 \((a=\frac{1}{20},b=\frac{1}{2},c=25,d=8,\omega=1.2,v=10\textrm{ and }w=1)\).
@@ -36,15 +16,30 @@ a = 1/20
 b = 1/2
 c = 25
 d = 8
+beta <- c(b,c,d)
 omega = 1.2
 v = 10
 w = 1
 Tbig = 200
 
-set.seed(12345) # Set seed for reproducability
-sim.data = simulate.example1(Tbig,a,b,c,d,omega,v,w)
-sim.y = sim.data$y
-sim.theta = sim.data$theta
+G <- function(arg){c(arg[1],arg[1]/(1+arg[1]^2),cos(omega*arg[2]))}
+
+# Simulating the data
+set.seed(12345)
+sim.y         <- rep(0,Tbig)
+sim.theta     <- rep(0,Tbig)
+sim.theta0    <- 0.1
+sim.t0        <- 0.0
+
+g             <- G(c(sim.theta0,sim.t0))
+sim.theta[1]  <- rnorm(1,sum(g*beta),sqrt(w))
+sim.y[1]      <- rnorm(1,a*sim.theta[1]^2,sqrt(v))
+for(t in 2:Tbig)
+{
+  g            <- G(c(sim.theta[t-1],t-1))
+  sim.theta[t] <- rnorm(1,sum(g*beta),sqrt(w))
+  sim.y[t]     <- rnorm(1,a*sim.theta[t]^2,sqrt(v))
+}
 
 # Plot the time series
 par(mfrow=c(2,2))
@@ -58,202 +53,402 @@ plot(sim.theta[1:199],sim.theta[2:200],type="p",pch=19,xlab=TeX("State,$\\theta_
 
 ![](README_files/figure-gfm/simulate-1.png)<!-- -->
 
-The first plot shows the variation of observations \(y_t\) with state
-\(\theta_t\) and the second one plots \(`\theta_t`\) versus
-\(`\theta_{t-1}`\).
+``` r
+# Evaluate 2.5% and 97.5 % quantiles
+quant025    <- function(x){quantile(x,0.025)}
+quant975    <- function(x){quantile(x,0.975)}
+```
 
-The first goal is to find the probability density functions
-\(`p(\theta_t^{(m)}|\theta_{(t-1)}^{(m)})`\) and
-\(`p(y_t|\theta_{(t)}^{(m)})`\). From the state evolution equation, with
-evolution error \(`w_t`\) following a Gaussian distribution
-\(`N(0,w)`\), we can evaluate the density functions to be a Gaussian
-distribution \(`N\big(a\theta_{t}^2,v\big)`\) and
-\(`N\bigg(b\theta^{(m)}_{t-1}+c\dfrac{\theta^{(m)}_{t-1}}{1+\theta_{t-1}^{(m)2}}+d\cos(\omega t),w\bigg)`\).
-The importance density
-\(`g_t(\theta_t^{(m)}|\theta_{0:(t-1)}^{(m)},y_{1:t})`\) is considered
-to be Gaussian distribution \(`N(\theta_{t-1},w)`\).
+## Sequential Importance Sampling with Resampling
 
 ``` r
-#####################################################################
-# Computes the expection of current state given previous state:     #
-# E[theta_t|theta_{t-1}]=b*theta+c*theta/(1+theta^2)+d*cos(omega*t) #
-mu.theta = function(theta,t) b*theta+c*theta/(1+theta^2)+d*cos(omega*t)
-
-#####################################################################
-# Computes the expection of current observation given present state:#
-# E[y_t|theta_t]=a*theta^2                                          #
-mu.y = function(theta) a*theta^2                                    
-
-#####################################################################
-# Returns a sample from the importance distribution and the weight  #
-# to scale the target probability distribution to the importance    #
-imp.sampling <- function(M,y,t,theta.previous,weight.prev)
+# Sequential importance sampling with resampling (SISR)
+# ------------------------------------
+smc.sisr <- function(Tbig,M,y,theta0,wt0)
 {
-  theta.current <- rep(NA,M)
-  weight.current <- rep(NA,M)
-  for(m in 1:M)
+  est.theta <- NULL
+  weights <- NULL
+  ess <- NULL
+  
+  theta <- theta0
+  wt <- wt0
+  
+  for(t in 1:Tbig)
   {
-    theta.current[m] <- rnorm(1,mean=mu.theta(theta.previous[m],t),sd=sqrt(w))
-    num1 <- dnorm(y[t],mu.y(theta.current[m]),sqrt(v))
-    num2 <- dnorm(theta.current[m],mu.theta(theta.previous[m],t),sqrt(w))
-    den <- dnorm(theta.current[m],mean=theta.previous[m],sd=sqrt(w))
-    weight.current[m] <- weight.prev[m]*num1*num2/den
+    X <- t(apply(cbind(theta,t-1),1,G))
+    m.theta <- apply(X*beta,1,sum)
+    theta <- rnorm(M,m.theta,sqrt(w))
+    
+    wt <- dnorm(y[t],a*theta^2,sqrt(v))
+    wt <- wt/sum(wt)
+    est.theta <- rbind(est.theta,sample(theta,size=M,
+                                        replace=T,prob=wt))
+    weights <- rbind(weights,wt)
+    ess <- rbind(ess,1/sum(wt^2))
   }
-  weight.current <- weight.current/sum(weight.current)
-  return(list("theta"=theta.current,"weight"=weight.current))
+  return(list("theta"=est.theta,"wt"=weights,"ess"=ess))
 }
 
-#####################################################################
-# Performs filtering operation with importance sampling to estimate
-# the states for times t=1 to t=T.
-smc.sis <- function(Tbig,M,y)
-{
-  # Initialize the arrays of estimates
-  theta <- array(NA,dim=c(M,Tbig))
-  est.theta <- array(NA,dim=c(M,Tbig))
-  weight <- array(NA,dim=c(M,Tbig))
-  
-  # Initial state and weight
-  theta[,1] <- rnorm(M,mean=0,sd=sqrt(w))
-  weight[,1] <- rep(1/M,M)
-  # Find estimated state
-  est.theta[,1] <- sample(x = theta[,1], M, 
-                          replace = T, prob = weight[,1])
-  
-  for(t in 2:Tbig)
-  {
-    # Importance sampling step
-    samples <- imp.sampling(M,y,t,est.theta[,t-1],weight[,t-1])
-    theta[,t] <- samples$theta
-    weight[,t] <- samples$weight
-    # Find estimated state through resampling
-    est.theta[,t] <- sample(x = theta[,t], M, 
-                          replace = T, prob = weight[,t])
-  }
-  theta.mean <- apply(est.theta,2,mean)
-  theta.var <- apply(est.theta,2,var)
-  return(list("mu"=theta.mean,"sigma2"=theta.var))
-}
+set.seed(12545)
+M <- 1000
+m0 <- 0
+C0 <- 100
+
+theta0 <- rnorm(M,m0,sqrt(C0))
+wt0 <- rep(1/M,M)
+
+est <- smc.sisr(Tbig,M,sim.y,theta0,wt0)
+mtheta = apply(est$theta,1,mean)
+ltheta = apply(est$theta,1,quant025)
+utheta = apply(est$theta,1,quant975)
+es <- est$ess
+
+par(mfrow=c(2,1))
+plot(mtheta,xlab="Time",ylab="State estimates",main=expression(theta_t),type = 'l',
+     col="blue")
+lines(sim.theta,col="red",lty=2)
+plot(es,type="l")
 ```
 
-``` r
-sis.est.theta <- smc.sis(200,500,sim.y)
-theta.mean <- sis.est.theta$mu
-theta.var <- sis.est.theta$sigma2
+![](README_files/figure-gfm/imp_sampling-1.png)<!-- -->
 
-ll = min(c(min(theta.mean-2*sqrt(theta.var)),min(sim.theta),sim.y))
-ul = max(c(max(theta.mean+2*sqrt(theta.var)),max(sim.theta),sim.y))
-
-plot(theta.mean,type="l",xlab="time",ylab="State",ylim=c(ll,ul),
-     lwd=2)
-lines(sim.theta,col="red")
-lines(theta.mean+1.96*sqrt(theta.var),lty=4,lwd=0.5,col="blue")
-lines(theta.mean-1.96*sqrt(theta.var),lty=4,lwd=0.5,col="blue")
-```
-
-![](README_files/figure-gfm/estimate-1.png)<!-- -->
-
-``` r
-#points(sim.y,lwd=2)
-```
+## Auxillary Particle Filter
 
 We now analyze the auxillary particle filter approach for posterior
 simulation using sequential Monte Carlo. The first
 
 ``` r
-##########################################################################
-# Samples M auxillary variables from the set {1,2,...,M}. The probablity #
-# of each index is proportional to w_k*p(y|mu_k) where w_k is the weight #
-# corresponding to the kth sample of previous iteration and mu_k is the  #
-# mean of the distribution of theta_t|theta_{t-1}^{(k)}.
-
-aux.var <- function(M,y,t,theta.previous,weight.previous)
-{
-  # Get probablity of auxillary particles
-  prob <- rep(NA,M)
-  for(k in 1:M)
-  {
-    mu.k <- mu.theta(theta.previous[k],t)
-    prob[k] <- dnorm(y[t],mean=mu.y(mu.k),sd=sqrt(v))*weight.previous[k]
-  }
-  prob <- prob/sum(prob)
-  
-  # Sample auxillary variable
-  return(sample(M,size=M,replace=T,prob=prob))
-}
-
-##########################################################################
-# Performs importance sampling with auxillary particle sampling
-
-imp.sampling.aux <- function(M,y,t,theta.previous,weight.prev,aux.var)
-{
-  theta.current <- rep(NA,M)
-  weight.current <- rep(NA,M)
-  for(m in 1:M)
-  {
-    k <- aux.var[m]
-    theta.current[m] <- rnorm(1,mean=mu.theta(theta.previous[k],t),
-                              sd=sqrt(w))
-    mu.aux <- mu.theta(theta.previous[k],t)
-    
-    num <- dnorm(y[t],mean=mu.y(theta.current[m]),sd=sqrt(v))
-    den <- dnorm(y[t],mean=mu.y(mu.aux),sd=sqrt(v))
-    weight.current[m] <- num/den
-  }
-  weight.current <- weight.current/sum(weight.current)
-  return(list("theta"=theta.current,"weight"=weight.current))
-}
-
-smc.apf <- function(Tbig,M,y)
+smc.apf <- function(Tbig,M,y,theta0,wt0)
 {
   # Initialize the arrays of estimates
-  theta <- array(NA,dim=c(M,Tbig))
-  weight <- array(NA,dim=c(M,Tbig))
-  est.theta <- array(NA,dim=c(M,Tbig))
+  est.theta <- NULL
+  weights <- NULL
+  ess <- NULL
   
-  # Initial time instant
-  theta[,1] <- rnorm(M,mean=0,sd=sqrt(w))
-  weight[,1] <- rep(1/M,M)
-  est.theta[,1] <- sample(x = theta[,1], M, 
-                          replace = T, prob = weight[,1])
+  theta <- theta0
+  wt <- wt0
   
   # Iterate over the time instants
-  for (t in 2:Tbig)
+  for (t in 1:Tbig)
   {
-    # Find probabilities for auxilliary variables
-    aux.k <- aux.var(M,y,t,est.theta[,t-1],weight)
-    # Importance sampling step
-    samples <- imp.sampling.aux(M,y,t,est.theta[,t-1],weight[,t-1],aux.k)
-    theta[,t] <- samples$theta
-    weight[,t] <- samples$weight
+    X <- t(apply(cbind(theta,t-1),1,G))
+    m.theta <- apply(X*beta,1,sum)
+    theta.prior <- rnorm(M,m.theta,sqrt(w))
+    wt <- dnorm(y[t],a*theta.prior^2,sqrt(v))*wt
+    k <- sample(M,size=M,replace=T,prob=wt/sum(wt))
+    
+    theta <- rnorm(M,m.theta[k],sqrt(w))
+    wt <- dnorm(y[t],a*theta^2,sqrt(v))/dnorm(y[t],a*m.theta[k]^2,sqrt(v))  
+    wt <- wt/sum(wt)
     
     # Find estimated state through resampling
-    est.theta[,t] <- sample(x = theta[,t], M, 
-                          replace = T, prob = weight[,t])
+    est.theta <- rbind(est.theta,sample(theta, M, replace = T, prob = wt))
+    weights <- rbind(weights,wt)
+    ess <- rbind(ess,1/sum(wt^2))
   }
-  theta.mean <- apply(est.theta,2,mean)
-  theta.var <- apply(est.theta,2,var)
-  return(list("mu"=theta.mean,"sigma2"=theta.var))
+  return(list("theta"=est.theta,"wt"=weights,"ess"=ess))
+}
+
+
+set.seed(12545)
+M <- 1000
+m0 <- 0
+C0 <- 100
+
+theta0 <- rnorm(M,m0,sqrt(C0))
+wt0 <- rep(1/M,M)
+
+est <- smc.apf(Tbig,M,sim.y,theta0,wt0)
+mtheta = apply(est$theta,1,mean)
+ltheta = apply(est$theta,1,quant025)
+utheta = apply(est$theta,1,quant975)
+es <- est$ess
+
+par(mfrow=c(2,1))
+plot(mtheta,xlab="Time",ylab="State estimates",main=expression(theta_t),type = 'l',
+     col="blue")
+lines(sim.theta,col="red",lty=2)
+plot(es,type="l")
+```
+
+![](README_files/figure-gfm/auxparticlefilter-1.png)<!-- -->
+
+## Combined state and parameter estimation
+
+In this section, we perform the simultaneous estiation of states and
+parameters. We consider two cases:
+
+  - The first case is where the variances (v,w) are unknown while other
+    parameters (a,b,c,d,omega) are known.
+  - The second case is where parameters (b,c,d,v,w) are unknown and
+    (a,omega) are known.
+
+We analyze either of these scenario using the combination of kernel
+smoothing with auxillary particle filter as proposed by Liu and West
+(2001). In this method, the distribution of parameters given the
+information at a time instant is considered to be a mixture of normal
+distributions and a particle approximation to this distribution is
+evaluated.
+
+``` r
+# Liu and West filter
+# -------------------
+
+# Define discount factor
+# -------------------
+delta   <- 0.99
+h2      <- 1-((3*delta-1)/(2*delta))^2
+A       <- sqrt(1-h2)
+
+# Sample theta and phi from particle approximations
+# -------------------
+sample.theta.phi <- function(M,y,t,theta,phi)
+{
+  # Compute phi mean and phi variance
+  m.phi <- apply(phi,2,mean)
+  v.phi <- var(phi)
+  
+  # Compute prior point estimate of (theta,phi)
+  # given by (mu,m)
+  X <- t(apply(cbind(theta,t-1),1,G)) 
+  theta.prior <- apply(X*beta,1,sum)
+  phi.prior <- A*phi+(1-A)*matrix(m.phi,M,2,byrow=T)
+  
+  # Sample auxillary indices
+  p <- dnorm(y[t],a*theta.prior^2,exp(phi.prior[,1]/2))
+  k <- sample(1:M,size=M,replace=T,prob=p)
+  
+  # Sample theta and phi from particle approximate
+  phi.post <- phi.prior[k,] + matrix(rnorm(2*M),M,2)%*%chol(h2*v.phi)
+  X <- t(apply(cbind(theta[k],t-1),1,G))
+  theta.post <- rnorm(M,apply(X*beta,1,sum),exp(phi.post[,2]/2))
+  weight <- dnorm(y[t],a*theta.post^2,exp(phi.post[,1]/2))/
+    dnorm(y[t],a*theta.prior[k]^2,exp(phi.prior[k,1]/2))
+  weight <- weight/sum(weight)
+  ind    = sample(1:M,size=M,replace=T,prob=weight)
+  
+  return(list("theta"=theta.post[ind],"phi"=phi.post[ind,]))
+}
+
+
+# Sequential Monte Carlo
+# -------------------
+smc.liuwest.var <- function(Tbig,M,y,theta0,phi0)
+{
+  # Initialize the arrays of estimates
+  est.theta <- NULL
+  est.phi <- array(0,c(M,2,Tbig))
+  
+  theta <- theta0
+  phi <- phi0
+  
+  # Iterate over the time instants
+  for (t in 1:Tbig)
+  {
+    # Sample theta and phi from particle approximate distributions
+    samples <- sample.theta.phi(M,y,t,theta,phi)
+    theta <- samples$theta
+    phi <- samples$phi
+    
+    # Update output arrays
+    est.theta <- rbind(est.theta,theta)
+    est.phi[,,t] <- phi
+  }
+  mtheta = apply(est.theta,1,mean)
+  ltheta = apply(est.theta,1,quant025)
+  utheta = apply(est.theta,1,quant975)
+  mphi  = matrix(0,Tbig,2)
+  lphi  = matrix(0,Tbig,2)
+  uphi  = matrix(0,Tbig,2)
+  
+  for (i in 1:2)
+  {
+    mphi[,i] = apply(exp(est.phi[,i,]),2,mean)
+    lphi[,i] = apply(exp(est.phi[,i,]),2,quant025)
+    uphi[,i] = apply(exp(est.phi[,i,]),2,quant975)
+  }
+  
+  return(list("theta_mu"=mtheta,"theta_l"=ltheta,"theta_u"=utheta,
+              "phi_mu"=mphi,"phi_l"=lphi,"phi_u"=uphi))
+}
+
+
+
+pars.true <- c(v,w)
+set.seed(8642)
+M <- 10000
+
+# Prior hyperparameters
+# ---------------------
+a0  = 3
+A0  = 20
+b0  = 3
+B0  = 2
+m0  = 0
+V0  = 5
+
+# Initialize estimates
+# ---------------------
+phi0 <- cbind(log(1/rgamma(M,a0,A0)),log(1/rgamma(M,b0,B0)))
+theta0 <- rnorm(M,m0,sqrt(V0))
+
+# Perform estimation
+# ---------------------
+est <- smc.liuwest.var(200,M,sim.y,theta0,phi0)
+
+mx <- est$theta_mu
+lx <- est$theta_l
+ux <- est$theta_u
+
+mpars <- est$phi_m
+lpars <- est$phi_l
+upars <- est$phi_u
+
+layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
+plot(mx,xlab="Time",ylab="State estimates",main=expression(x[t]),type = 'l',
+     col="blue")
+lines(sim.theta,col="red",lty=2)
+# lines(lx,col="blue",lty=2)
+# lines(ux,col="blue",lty=2)
+names = c("v","w")
+for (i in 1:2){
+  ts.plot(lpars[,i],ylim=range(lpars[,i],upars[,i]),ylab="",main=names[i])
+  lines(lpars[,i],col="blue",lty=4)
+  lines(mpars[,i],col=1)
+  lines(upars[,i],col="blue",lty=4)
+  abline(h=pars.true[i],col="red",lty=2)
 }
 ```
 
-``` r
-apf.est.theta <- smc.apf(200,500,sim.y)
-apf.theta.mean <- apf.est.theta$mu
-apf.theta.var <- apf.est.theta$sigma2
-
-ll = min(c(min(apf.theta.mean-2*sqrt(apf.theta.var)),min(sim.theta),sim.y))
-ul = max(c(max(apf.theta.mean+2*sqrt(apf.theta.var)),max(sim.theta),sim.y))
-
-plot(apf.theta.mean,type="l",xlab="time",ylab="State",ylim=c(ll,ul),
-     lwd=2)
-lines(sim.theta,col="red")
-lines(apf.theta.mean+1.96*sqrt(apf.theta.var),lty=4,lwd=0.5,col="blue")
-lines(apf.theta.mean-1.96*sqrt(apf.theta.var),lty=4,lwd=0.5,col="blue")
-```
-
-![](README_files/figure-gfm/estimate_aux-1.png)<!-- -->
+![](README_files/figure-gfm/estimate_liuwest_case1-1.png)<!-- -->
 
 ``` r
-#points(sim.y,lwd=2)
+pars.true <- c(beta,v,w)
+
+# Define discount factor
+delta   <- 0.99
+h2      <- 1-((3*delta-1)/(2*delta))^2
+A       <- sqrt(1-h2)
+
+sample.theta.phi <- function(M,y,t,theta,phi)
+{
+  # Compute phi mean and phi variance
+  m.phi <- apply(phi,2,mean)
+  v.phi <- var(phi)
+  
+  # Compute auxillary indices
+  X <- t(apply(cbind(theta,t-1),1,G))
+  theta.prior <- apply(X*phi[,1:3],1,sum)
+  phi.prior <- A*phi+(1-A)*matrix(m.phi,M,5,byrow=T)
+  
+  # Compute auxillary indices
+  p <- dnorm(y[t],a*theta.prior^2,exp(phi.prior[,4]/2))
+  k <- sample(1:M,size=M,replace=T,prob=p)
+  
+  # Sample theta and phi
+  phi.post <- phi.prior[k,] + matrix(rnorm(5*M),M,5)%*%chol(h2*v.phi)
+  X <- t(apply(cbind(theta[k],t-1),1,G))
+  theta.post <- rnorm(M,apply(X*phi.post[,1:3],1,sum),exp(phi.post[,5]/2))
+  weight <- dnorm(y[t],a*theta.post^2,exp(phi.post[,4]/2))/
+    dnorm(y[t],a*theta.prior[k]^2,exp(phi.prior[k,4]/2))
+  weight <- weight/sum(weight)
+  ind    = sample(1:M,size=M,replace=T,prob=weight)
+  
+  return(list("theta"=theta.post[ind],"phi"=phi.post[ind,]))
+}
+
+
+smc.liu <- function(Tbig,M,y,theta0,phi0)
+{
+  # Initialize the arrays of estimates
+  est.theta <- NULL
+  est.phi <- array(0,c(M,5,Tbig))
+  
+  theta <- theta0
+  phi <- phi0
+  
+  # Iterate over the time instants
+  for (t in 1:Tbig)
+  {
+    samples <- sample.theta.phi(M,y,t,theta,phi)
+    
+    theta <- samples$theta
+    phi <- samples$phi
+    
+    # Update
+    est.theta <- rbind(est.theta,theta)
+    est.phi[,,t] <- phi 
+  }
+  mtheta = apply(est.theta,1,mean)
+  ltheta = apply(est.theta,1,quant025)
+  utheta = apply(est.theta,1,quant975)
+  mphi  = matrix(0,Tbig,5)
+  lphi  = matrix(0,Tbig,5)
+  uphi  = matrix(0,Tbig,5)
+  for (i in 1:3)
+  {
+    mphi[,i] = apply(est.phi[,i,],2,mean)
+    lphi[,i] = apply(est.phi[,i,],2,quant025)
+    uphi[,i] = apply(est.phi[,i,],2,quant975)
+  }
+  for (i in 4:5)
+  {
+    mphi[,i] = apply(exp(est.phi[,i,]),2,mean)
+    lphi[,i] = apply(exp(est.phi[,i,]),2,quant025)
+    uphi[,i] = apply(exp(est.phi[,i,]),2,quant975)
+  }
+  
+  return(list("theta_mu"=mtheta,"theta_l"=ltheta,"theta_u"=utheta,
+              "phi_mu"=mphi,"phi_l"=lphi,"phi_u"=uphi))
+}
+
+pars.true <- c(beta,v,w)
+
+# Liu and West filter
+# -------------------
+set.seed(8642)
+M <- 10000
+
+# Prior hyperparameters
+# ---------------------
+a0  = 3
+A0  = 20
+b0  = 3
+B0  = 2
+c0  = c(0.5,25,8)
+C0  = c(0.1,16,2)
+m0  = 0
+V0  = 5
+
+phi0 <- cbind(rnorm(M,c0[1],sqrt(C0[1])),rnorm(M,c0[2],sqrt(C0[2])),rnorm(M,c0[3],sqrt(C0[3])),
+               log(1/rgamma(M,a0,A0)),log(1/rgamma(M,b0,B0)))
+theta0 <- rnorm(M,m0,sqrt(V0))
+
+
+est <- smc.liu(200,M,sim.y,theta0,phi0)
+
+mx <- est$theta_mu
+lx <- est$theta_l
+ux <- est$theta_u
+
+mpars <- est$phi_m
+lpars <- est$phi_l
+upars <- est$phi_u
+
+par(mfrow=c(3,2))
+plot(mx,xlab="Time",ylab="State estimates",main=expression(x[t]),type = 'l',
+     col="blue")
+lines(sim.theta,col="red",lty=2)
+# lines(lx,col="blue",lty=2)
+# lines(ux,col="blue",lty=2)
+names = c("b","c","d","v","w")
+for (i in 1:5){
+  ts.plot(lpars[,i],ylim=range(lpars[,i],upars[,i]),ylab="",main=names[i])
+  lines(lpars[,i],col="blue")
+  lines(mpars[,i],col=1)
+  lines(upars[,i],col="blue")
+  abline(h=pars.true[i],col="red",lty=2)
+}
 ```
+
+![](README_files/figure-gfm/estimate_liuwest_case2-1.png)<!-- -->
