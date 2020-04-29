@@ -57,6 +57,24 @@ plot(sim.theta[1:199],sim.theta[2:200],type="p",pch=19,xlab=TeX("State,$\\theta_
 # Evaluate 2.5% and 97.5 % quantiles
 quant025    <- function(x){quantile(x,0.025)}
 quant975    <- function(x){quantile(x,0.975)}
+
+
+# Smoothing function
+smoothing <- function(Tbig,M,theta)
+{
+  theta.smooth <- array(0,dim=c(Tbig,M))
+  theta.smooth[Tbig,] <- theta[Tbig,]
+  for(t in (Tbig-1):1)
+  {
+    X <- t(apply(cbind(theta[t,],t-1),1,G))
+    m.theta <- apply(X*beta,1,sum)
+    wt <- dnorm(theta.smooth[t+1,],m.theta,sqrt(v))
+    wt <- wt/sum(wt)
+    theta.smooth[t,] <- sample(theta[t,],size=M,
+                               replace=T,prob=wt)
+  }
+  return(theta.smooth)
+}
 ```
 
 ## Sequential Importance Sampling with Resampling
@@ -67,7 +85,6 @@ quant975    <- function(x){quantile(x,0.975)}
 smc.sisr <- function(Tbig,M,y,theta0,wt0)
 {
   est.theta <- NULL
-  weights <- NULL
   ess <- NULL
   
   theta <- theta0
@@ -81,12 +98,14 @@ smc.sisr <- function(Tbig,M,y,theta0,wt0)
     
     wt <- dnorm(y[t],a*theta^2,sqrt(v))
     wt <- wt/sum(wt)
+    
+    # Estimated states
     est.theta <- rbind(est.theta,sample(theta,size=M,
                                         replace=T,prob=wt))
-    weights <- rbind(weights,wt)
+    # Estimated sample size
     ess <- rbind(ess,1/sum(wt^2))
   }
-  return(list("theta"=est.theta,"wt"=weights,"ess"=ess))
+  return(list("theta"=est.theta,"ess"=ess))
 }
 
 set.seed(12545)
@@ -98,16 +117,19 @@ theta0 <- rnorm(M,m0,sqrt(C0))
 wt0 <- rep(1/M,M)
 
 est <- smc.sisr(Tbig,M,sim.y,theta0,wt0)
-mtheta = apply(est$theta,1,mean)
-ltheta = apply(est$theta,1,quant025)
-utheta = apply(est$theta,1,quant975)
-es <- est$ess
+smt <- smoothing(Tbig,M,est$theta)
+sisr.stheta = apply(smt,1,mean)
+sisr.mtheta = apply(est$theta,1,mean)
+sisr.ltheta = apply(est$theta,1,quant025)
+sisr.utheta = apply(est$theta,1,quant975)
+sisr.es <- est$ess
 
 par(mfrow=c(2,1))
-plot(mtheta,xlab="Time",ylab="State estimates",main=expression(theta_t),type = 'l',
-     col="blue")
+plot(sisr.mtheta,xlab="Time",ylab="State estimates",
+     main=expression(theta_t),type = 'l',col="blue")
 lines(sim.theta,col="red",lty=2)
-plot(es,type="l")
+lines(sisr.stheta,col=1,lty=1)
+plot(sisr.es,type="l",ylab="Effective sample size")
 ```
 
 ![](README_files/figure-gfm/imp_sampling-1.png)<!-- -->
@@ -122,7 +144,6 @@ smc.apf <- function(Tbig,M,y,theta0,wt0)
 {
   # Initialize the arrays of estimates
   est.theta <- NULL
-  weights <- NULL
   ess <- NULL
   
   theta <- theta0
@@ -138,15 +159,17 @@ smc.apf <- function(Tbig,M,y,theta0,wt0)
     k <- sample(M,size=M,replace=T,prob=wt/sum(wt))
     
     theta <- rnorm(M,m.theta[k],sqrt(w))
-    wt <- dnorm(y[t],a*theta^2,sqrt(v))/dnorm(y[t],a*m.theta[k]^2,sqrt(v))  
+    wt <- dnorm(y[t],a*theta^2,sqrt(v))/dnorm(y[t],
+                                              a*m.theta[k]^2,sqrt(v))  
     wt <- wt/sum(wt)
     
     # Find estimated state through resampling
-    est.theta <- rbind(est.theta,sample(theta, M, replace = T, prob = wt))
-    weights <- rbind(weights,wt)
+    est.theta <- rbind(est.theta,sample(theta, M, 
+                                        replace = T, prob = wt))
+    # Estimated sample size
     ess <- rbind(ess,1/sum(wt^2))
   }
-  return(list("theta"=est.theta,"wt"=weights,"ess"=ess))
+  return(list("theta"=est.theta,"ess"=ess))
 }
 
 
@@ -159,16 +182,19 @@ theta0 <- rnorm(M,m0,sqrt(C0))
 wt0 <- rep(1/M,M)
 
 est <- smc.apf(Tbig,M,sim.y,theta0,wt0)
-mtheta = apply(est$theta,1,mean)
-ltheta = apply(est$theta,1,quant025)
-utheta = apply(est$theta,1,quant975)
-es <- est$ess
+smt <- smoothing(Tbig,M,est$theta)
+apf.stheta = apply(smt,1,mean)
+apf.mtheta = apply(est$theta,1,mean)
+apf.ltheta = apply(est$theta,1,quant025)
+apf.utheta = apply(est$theta,1,quant975)
+apf.es <- est$ess
 
 par(mfrow=c(2,1))
-plot(mtheta,xlab="Time",ylab="State estimates",main=expression(theta_t),type = 'l',
-     col="blue")
+plot(apf.mtheta,xlab="Time",ylab="State estimates",
+     main=expression(theta_t),type = 'l', col="blue")
 lines(sim.theta,col="red",lty=2)
-plot(es,type="l")
+lines(apf.stheta,col=1,lty=1)
+plot(apf.es,type="l",ylab="Efective sample size")
 ```
 
 ![](README_files/figure-gfm/auxparticlefilter-1.png)<!-- -->
