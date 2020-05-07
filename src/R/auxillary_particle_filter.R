@@ -126,12 +126,55 @@ apf.ltheta = apply(est$theta,1,quant025)
 apf.utheta = apply(est$theta,1,quant975)
 apf.es <- est$ess
 
+fil.error <- abs(sim.theta-apf.mtheta)
+smt.error <- abs(sim.theta-apf.stheta)
 
 # Plot the estimates
 # ------------------
-par(mfrow=c(2,1))
-plot(apf.mtheta,xlab="Time",ylab="State estimates",
-     main=expression(theta_t),type = 'l', col="blue")
-lines(sim.theta,col="red",lty=2)
-lines(apf.stheta,col=1,lty=1)
-plot(apf.es,type="l",ylab="Efective sample size")
+layout(matrix(c(1,3,2,4), 2, 2, byrow = TRUE))
+plot(sisr.mtheta,xlab="Time",ylab="State estimates",
+     main=TeX("State $\\theta_t$ estimates after filtering"),
+     type = 'l',col="blue",pch=20,cex.main=1.5)
+lines(sim.theta,col=1,lty="dotted")
+# lines(sisr.ltheta,col="orchid",lty=4)
+# lines(sisr.utheta,col="orchid",lty=4)
+# legend("topleft", bty = "n",
+#        legend=c("true states", "estimated states after filtering"),
+#        lty=c("dotted", "solid"), pch=c(NULL,1),
+#        col=c("black", "blue"))
+plot(sisr.stheta,xlab="Time",ylab="State estimates",
+     main=TeX("State $\\theta_t$ estimates after smoothing"),
+     type = 'b',col="red",pch=20,cex.main=1.5)
+lines(sim.theta,col=1,lty="dotted")
+# legend("topleft", bty = "n",
+#        legend=c("true states", "estimated states after smoothing"),
+#        lty=c("dotted", "solid"), pch=c(NULL,1),
+#        col=c("black", "red"))
+# plot(sisr.es,type="l",ylab="Effective sample size",
+#      xlab="Time")
+plot(fil.error,type="h",ylab="Error in filtering estimation",
+     xlab="Time",main="Filtering error",cex.main=1.5)
+plot(smt.error,type="h",ylab="Error in filtering estimation",
+     xlab="Time",main="Smoothing error",cex.main=1.5)
+
+# par(mfrow=c(1,1))
+# plot(sim.theta,apf.mtheta,xlab="True states",ylab="Filtered estimates",
+#      cex.axis=1.2,type="p",pch=5,col="red")
+# points(sim.theta,sisr.mtheta,pch=4,col="blue")
+# points(sim.theta,sisr.unif.mtheta,pch=3,col="black")
+# abline(1,1,lty="dashed")
+# legend("topleft",bty="n",legend=c("Importance sampling estimates with Gaussian dist. as prior",
+#                                   "Importance sampling estimates with uniform dist. as prior",
+#                                    "Auxillary particle filter estimates"),
+#        pch=c(4,3,5),col=c("blue","black","red"))
+
+
+
+
+plot(apf.es/M,type='b',col='red',xlab="Time",ylab="ESS/M",pch=2,
+     main="Normalized effective sample size",cex.main=1.5)
+lines(sisr.es/M,type='b',col="blue",pch=2)
+legend("topleft",bty="n",legend=c("Importance sampling estimates with Gaussian dist. as prior",
+                                  "Importance sampling estimates with uniform dist. as prior",
+                                   "Auxillary particle filter estimates"),
+       pch=c(4,3,5),col=c("blue","black","red"))

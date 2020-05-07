@@ -149,7 +149,23 @@ smc.liu <- function(Tbig,M,y,theta0,phi0)
               "phi_mu"=mphi,"phi_l"=lphi,"phi_u"=uphi))
 }
 
-
+# Smoothing function
+# -------------------
+smoothing <- function(Tbig,M,theta)
+{
+  theta.smooth <- array(0,dim=c(Tbig,M))
+  theta.smooth[Tbig,] <- theta[Tbig,]
+  for(t in (Tbig-1):1)
+  {
+    X <- t(apply(cbind(theta[t,],t-1),1,G))
+    m.theta <- apply(X*beta,1,sum)
+    wt <- dnorm(theta.smooth[t+1,],m.theta,sqrt(v))
+    wt <- wt/sum(wt)
+    theta.smooth[t,] <- sample(theta[t,],size=M,
+                               replace=T,prob=wt)
+  }
+  return(theta.smooth)
+}
 
 # Liu and West filter
 # -------------------
@@ -176,6 +192,7 @@ theta0 <- rnorm(M,m0,sqrt(V0))
 # -----------------------------------
 est <- smc.liu(200,M,sim.y,theta0,phi0)
 
+
 mx <- est$theta_mu
 lx <- est$theta_l
 ux <- est$theta_u
@@ -184,42 +201,38 @@ mpars <- est$phi_m
 lpars <- est$phi_l
 upars <- est$phi_u
 
+fil.error <- abs(sim.theta-mx)
+
 
 # Plot the estimates and quantiles
 # --------------------------------
 pars.true <- c(beta,v,w)
 
-par(mfrow=c(3,2))
-plot(mx,xlab="Time",ylab="State estimates",main=expression(x[t]),type = 'l',
-     col="blue")
-lines(sim.theta,col="red",lty=2)
-# lines(lx,col="blue",lty=2)
-# lines(ux,col="blue",lty=2)
-names = c("b","c","d","v","w")
+layout(matrix(c(1,2), 2, 1, byrow = TRUE))
+plot(mx,xlab="Time",ylab="State estimates",
+     main=TeX("State $\\theta_t$ estimates after filtering"),
+     type = 'b',col="blue",pch=20,cex.main=1.5)
+lines(sim.theta,col=1,lty="dotted")
+plot(fil.error,type="h",ylab="Error in filtering estimation",
+     xlab="Time",main="Filtering error",cex.main=1.5)
 
-for (i in 1:5){
-  ts.plot(lpars[,i],ylim=range(lpars[,i],upars[,i]),ylab="",main=names[i])
+
+names = c("Parameter: b","Parameter: c","Parameter: d","Parameter: v","Parameter: w")
+par(mfrow=c(1,3))
+for (i in 1:3){
+  ts.plot(mpars[,i],ylim=range(lpars[,i],upars[,i]),ylab="Estimated parameter",
+          main=names[i],col="black")
   lines(lpars[,i],col="blue")
-  lines(mpars[,i],col=1)
   lines(upars[,i],col="blue")
-  abline(h=pars.true[i],col="red",lty=2)
+  abline(h=pars.true[i],col="red",lty="dotted")
 }
 
-# Smoothing function
-# -------------------
-smoothing <- function(Tbig,M,theta)
-{
-  theta.smooth <- array(0,dim=c(Tbig,M))
-  theta.smooth[Tbig,] <- theta[Tbig,]
-  for(t in (Tbig-1):1)
-  {
-    X <- t(apply(cbind(theta[t,],t-1),1,G))
-    m.theta <- apply(X*beta,1,sum)
-    wt <- dnorm(theta.smooth[t+1,],m.theta,sqrt(v))
-    wt <- wt/sum(wt)
-    theta.smooth[t,] <- sample(theta[t,],size=M,
-                               replace=T,prob=wt)
-  }
-  return(theta.smooth)
-}
 
+par(mfrow=c(1,2))
+for (i in 4:5){
+  ts.plot(mpars[,i],ylim=range(lpars[,i],upars[,i]),ylab="Estimated parameter",
+          main=names[i],col="black")
+  lines(lpars[,i],col="blue")
+  lines(upars[,i],col="blue")
+  abline(h=pars.true[i],col="red",lty="dotted")
+}

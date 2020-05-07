@@ -177,17 +177,19 @@ mpars <- est$phi_m
 lpars <- est$phi_l
 upars <- est$phi_u
 
-layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
-plot(mx,xlab="Time",ylab="State estimates",main=expression(x[t]),type = 'l',
-     col="blue")
-lines(sim.theta,col="red",lty=2)
-# lines(lx,col="blue",lty=2)
-# lines(ux,col="blue",lty=2)
-names = c("v","w")
+layout(matrix(c(1,2), 2, 1, byrow = TRUE))
+plot(mx,xlab="Time",ylab="State estimates",
+     main=TeX("State $\\theta_t$ estimates after filtering"),
+     type = 'b',col="blue",pch=20,cex.main=1.5)
+lines(sim.theta,col=1,lty="dotted")
+plot(fil.error,type="h",ylab="Error in filtering estimation",
+     xlab="Time",main="Filtering error",cex.main=1.5)
+
+names = c("Parameter: v","Parameter: w")
 for (i in 1:2){
-  ts.plot(lpars[,i],ylim=range(lpars[,i],upars[,i]),ylab="",main=names[i])
+  ts.plot(mpars[,i],ylim=range(lpars[,i],upars[,i]),ylab="Estimated parameter",
+          main=names[i],col="black")
   lines(lpars[,i],col="blue",lty=4)
-  lines(mpars[,i],col=1)
   lines(upars[,i],col="blue",lty=4)
   abline(h=pars.true[i],col="red",lty=2)
 }
@@ -211,3 +213,13 @@ smoothing <- function(Tbig,M,theta)
   return(theta.smooth)
 }
 
+
+
+par(mfrow=c(1,1))
+plot(sim.theta,mx,xlab="True states",ylab="Filtered estimates",
+     cex.axis=1.2,type="p",pch=5,col="red")
+points(sim.theta,mx.twoparam,pch=4,col="blue")
+abline(1,1,lty="dashed")
+legend("topleft",bty="n",legend=c("Estimation with unknown variances",
+                                  "Estimation with unknown b,c,d,v and w"),
+       pch=c(4,5),col=c("blue","red"))
