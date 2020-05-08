@@ -1,1 +1,7 @@
-Directory for Python Files
+Put your own relevant path before running the code
+data.py is used to get each region name from the files and create a seperate '.csv' file for each region
+
+Things to check:
+
+I am getting 306 unique places please check if this matches
+Also the code seems not efficient as it takes 189 sec
