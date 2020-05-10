@@ -5,7 +5,7 @@ import time
 import csv
 from operator import add
 
-source_dir = Path('nssac-ncov-data-country-state/')
+source_dir = Path('/nssac-ncov-data-country-state/')
 
 def processFiles(name):
     files = source_dir.glob('*.csv')  # check ext
@@ -76,17 +76,19 @@ def regionStats(regionName):
             # readFile.seek(0)
             sumStats = [0, 0, 0]
             lastTime = 0
+            lastEpoch = 0
             for line in readFile:
                 listLine = line.split(',')
-                if regionName == listLine[1]:  # check unique regions
+                if regionName in listLine[1]:  # check unique regions
                     stat =  map(int, (line.rstrip('\n').split(','))[3:])  #forming list of last 3 cols as ints
                     sumStats = list(map(add, sumStats, stat))
 
-                    date_time = listLine[2].split(" ")[0]  # to extract date from dateTime value
+                    date_time = listLine[2].split(" ")[0] # to extract date from dateTime value
                     pattern = '%Y-%m-%d'
                     epoch = int(time.mktime(time.strptime(date_time, pattern)))
-                    if epoch > lastTime:
-                        lastTime = listLine[2]
+                    if epoch > lastEpoch:
+                        lastTime = (listLine[2])
+                        lastEpoch = epoch
             sumStats.insert(0, lastTime)
             sumStats.insert(0, str(file)[-14:])
             dictStats[str(file)[-14:]] = sumStats
@@ -97,7 +99,8 @@ def regionStats(regionName):
 #test
 cityStats('India')
 allCityStats('India')
-regionStats('India')
+regionStats('Iran')
+
 
 
 
