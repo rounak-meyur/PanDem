@@ -92,9 +92,9 @@ def regionStats(regionName,source_dir=source_dir,target_dir=None):
                         lastTime = (listLine[2])
                         lastEpoch = epoch
             sumStats.insert(0, lastTime)
-            sumStats.insert(0, str(file)[-14:])
-            dictStats[str(file)[-14:]] = sumStats
-    header = ["Date", "Confirmed", "Deaths", "Recovered"]
+            sumStats.insert(0, str(file)[-14:-4])
+            dictStats[str(file)[-14:-4]] = sumStats
+    header = ["Date", "Last Update", "Confirmed", "Deaths", "Recovered"]
     csvName = regionName + "RegionStats"
     writeCsvStats(dictStats, csvName, header, target_dir)
     
