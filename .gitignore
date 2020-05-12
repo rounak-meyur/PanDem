@@ -1,2 +1,4 @@
 src/data
 src/temp
+src/Python/__pycache__
+src/Python/createCSV.py

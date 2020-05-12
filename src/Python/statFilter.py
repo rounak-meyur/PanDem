@@ -17,9 +17,11 @@ def processFiles(name,source_dir=source_dir):
 
 
 
-def writeCsvStats(stats, csvName, header = None):
+def writeCsvStats(stats, csvName, header = None, target_dir=None):
     # use index for non epoch stamped values
-    with open(csvName+'.csv', 'w', newline='') as file:
+    if target_dir==None: filename = csvName+'.csv'
+    else: filename = str(target_dir)+'/'+csvName+'.csv'
+    with open(filename, 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(header)
         for key in sorted(stats.keys()):
@@ -27,7 +29,7 @@ def writeCsvStats(stats, csvName, header = None):
 
 
 
-def cityStats(cityName,source_dir=source_dir):
+def cityStats(cityName,source_dir=source_dir,target_dir=None):
     # creates csv func:2
 
     setTime: Set[int] = set()
@@ -44,11 +46,11 @@ def cityStats(cityName,source_dir=source_dir):
             dictStats[epoch] = listLine[2:]
     header = ["Date", "Confirmed", "Deaths", "Recovered"]
     csvName = cityName+"CityStats"
-    writeCsvStats(dictStats, csvName, header)
+    writeCsvStats(dictStats, csvName, header, target_dir)
     
 
 
-def allCityStats(cityName,source_dir=source_dir):
+def allCityStats(cityName,source_dir=source_dir,target_dir=None):
     dictStats = {}
     counterKey = 0
     # nameFiler = processFiles(cityName)
@@ -63,9 +65,9 @@ def allCityStats(cityName,source_dir=source_dir):
     # todo: :( order
     header = ["Date", "Confirmed", "Deaths", "Recovered"]
     csvName = cityName + "AllCityStats"
-    writeCsvStats(dictStats, csvName, header)
+    writeCsvStats(dictStats, csvName, header, target_dir)
 
-def regionStats(regionName,source_dir=source_dir):
+def regionStats(regionName,source_dir=source_dir,target_dir=None):
     # todo: move to processFiles
     dictStats = {}
     
@@ -94,7 +96,7 @@ def regionStats(regionName,source_dir=source_dir):
             dictStats[str(file)[-14:]] = sumStats
     header = ["Date", "Confirmed", "Deaths", "Recovered"]
     csvName = regionName + "RegionStats"
-    writeCsvStats(dictStats, csvName, header)
+    writeCsvStats(dictStats, csvName, header, target_dir)
     
 
 #test
