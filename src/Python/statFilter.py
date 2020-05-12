@@ -7,7 +7,7 @@ from operator import add
 
 source_dir = Path('/nssac-ncov-data-country-state/')
 
-def processFiles(name):
+def processFiles(name,source_dir=source_dir):
     files = source_dir.glob('*.csv')  # check ext
     for file in files:
         with open(file, 'r') as readFile:
@@ -27,7 +27,7 @@ def writeCsvStats(stats, csvName, header = None):
 
 
 
-def cityStats(cityName):
+def cityStats(cityName,source_dir=source_dir):
     # creates csv func:2
 
     setTime: Set[int] = set()
@@ -48,7 +48,7 @@ def cityStats(cityName):
     
 
 
-def allCityStats(cityName):
+def allCityStats(cityName,source_dir=source_dir):
     dictStats = {}
     counterKey = 0
     # nameFiler = processFiles(cityName)
@@ -65,10 +65,10 @@ def allCityStats(cityName):
     csvName = cityName + "AllCityStats"
     writeCsvStats(dictStats, csvName, header)
 
-def regionStats(regionName):
+def regionStats(regionName,source_dir=source_dir):
     # todo: move to processFiles
     dictStats = {}
-
+    
     files = source_dir.glob('*.csv')  # check ext
     for file in files:
 
@@ -95,11 +95,12 @@ def regionStats(regionName):
     header = ["Date", "Confirmed", "Deaths", "Recovered"]
     csvName = regionName + "RegionStats"
     writeCsvStats(dictStats, csvName, header)
+    
 
 #test
-cityStats('India')
-allCityStats('India')
-regionStats('Iran')
+# cityStats('India')
+# allCityStats('India')
+# regionStats('Iran')
 
 
 
